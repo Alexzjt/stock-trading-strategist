@@ -28,25 +28,67 @@ def analyze_stock(symbol: str):
         if df.empty:
             return {"error": f"No data found for symbol {symbol}"}
         
-        # Calculate moving averages
+        df['MA10'] = df['收盘'].rolling(window=10).mean()
         df['MA50'] = df['收盘'].rolling(window=50).mean()
         df['MA200'] = df['收盘'].rolling(window=200).mean()
         
-        # Get latest data
-        latest = df.iloc[-1]
+        # Get the last two days for candlestick patterns
+        today = df.iloc[-1]
+        yesterday = df.iloc[-2]
+        
+        # Helper variables
+        t_open, t_close, t_high, t_low = float(today['开盘']), float(today['收盘']), float(today['最高']), float(today['最低'])
+        y_open, y_close, y_high, y_low = float(yesterday['开盘']), float(yesterday['收盘']), float(yesterday['最高']), float(yesterday['最低'])
+        
+        t_body = abs(t_close - t_open)
+        y_body = abs(y_close - y_open)
+        
+        candlestick_patterns = []
+        
+        # Determine short-term trend (e.g. comparing price to 10-day MA)
+        t_ma10 = float(today['MA10']) if not pd.isna(today['MA10']) else t_close
+        is_short_term_downtrend = t_close < t_ma10
+        is_short_term_uptrend = t_close > t_ma10
+        
+        # 1. Bullish Engulfing (看涨吞没) - MUST be in a downtrend
+        if is_short_term_downtrend and y_close < y_open and t_close > t_open and t_open < y_close and t_close > y_open:
+            candlestick_patterns.append("看涨吞没 (Bullish Engulfing) - 有效的底部反转信号")
+            
+        # 2. Bearish Engulfing (看跌吞没) - MUST be in an uptrend
+        if is_short_term_uptrend and y_close > y_open and t_close < t_open and t_open > y_close and t_close < y_open:
+            candlestick_patterns.append("看跌吞没 (Bearish Engulfing) - 强烈的顶部反转预警")
+            
+        # 3. Doji (十字星)
+        if t_body <= (t_high - t_low) * 0.1: # Body is very small compared to the total range
+            if is_short_term_uptrend:
+                candlestick_patterns.append("十字星 (Doji) - 高位出现，警惕上涨疲态")
+            elif is_short_term_downtrend:
+                candlestick_patterns.append("十字星 (Doji) - 低位出现，多空力量暂时均衡")
+            
+        # 4. Hammer (锤子线) / Hanging Man (上吊线)
+        lower_shadow = min(t_open, t_close) - t_low
+        upper_shadow = t_high - max(t_open, t_close)
+        if lower_shadow > 2 * t_body and upper_shadow < 0.2 * t_body and t_body > 0:
+            if is_short_term_downtrend:
+                candlestick_patterns.append("锤子线 (Hammer) - 探底回升的看涨反转信号")
+            elif is_short_term_uptrend:
+                candlestick_patterns.append("上吊线 (Hanging Man) - 高位诱多，极危险的看跌信号")
         
         result = {
             "symbol": symbol,
-            "date": str(latest['日期']),
-            "close": float(latest['收盘']),
-            "open": float(latest['开盘']),
-            "high": float(latest['最高']),
-            "low": float(latest['最低']),
-            "volume": float(latest['成交量']),
-            "MA50": float(latest['MA50']) if not pd.isna(latest['MA50']) else None,
-            "MA200": float(latest['MA200']) if not pd.isna(latest['MA200']) else None,
-            "trend_vs_MA50": "Above" if latest['收盘'] > latest['MA50'] else "Below",
-            "trend_vs_MA200": "Above" if latest['收盘'] > latest['MA200'] else "Below",
+            "date": str(today['日期']),
+            "close": t_close,
+            "open": t_open,
+            "high": t_high,
+            "low": t_low,
+            "volume": float(today['成交量']),
+            "MA10": float(today['MA10']) if not pd.isna(today['MA10']) else None,
+            "MA50": float(today['MA50']) if not pd.isna(today['MA50']) else None,
+            "MA200": float(today['MA200']) if not pd.isna(today['MA200']) else None,
+            "short_term_trend": "Downtrend" if is_short_term_downtrend else "Uptrend" if is_short_term_uptrend else "Neutral",
+            "trend_vs_MA50": "Above" if t_close > today['MA50'] else "Below",
+            "trend_vs_MA200": "Above" if t_close > today['MA200'] else "Below",
+            "recent_candlestick_patterns": candlestick_patterns
         }
         
         return result
