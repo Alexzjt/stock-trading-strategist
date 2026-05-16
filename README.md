@@ -21,7 +21,9 @@
 │   ├── livermore_wisdom.md                 # 杰西·利弗莫尔的大局观与纪律
 │   ├── practical_a_share_trading.md        # A股实战原则 (均线、量价、T+1风控)
 │   ├── ruler_rule_trend_channel.md         # 直尺法则与趋势通道
-│   └── wisdom_of_trading_rules.md          # 基础生存法则 (止损、资金管理)
+│   ├── stock_trading_practice_tw.md        # 股票操作学 (量价关系、缺口理论、颈线)
+│   ├── wisdom_of_trading_rules.md          # 基础生存法则 (止损、资金管理)
+│   └── yang_millionaire_tactics.md         # 逃顶抄底策略与牛熊周期轮回
 ├── scripts/             # 自动化工具脚本
 │   └── analyze_trend.py # 获取近期股价、均线及短期趋势的 Python 脚本
 └── README.md            # 项目说明文档
@@ -40,4 +42,4 @@ pip3 install akshare pandas
 
 > *"我想买入贵州茅台（600519），目前价格大概跌了很多了，我觉得是底部了。我准备先拿 50% 仓位买入，如果再跌我就补仓，把成本降下来。止损暂且不设，毕竟是好公司，我不信它能跌没。"*
 
-系统将自动触发该 Skill，导师 Agent 会读取知识库并严厉地拆解您的计划，指出其中的“接飞刀”、“不止损”、“向下摊薄”等自杀式行为，并最终给出 **🟢 批准**, **🟡 警告**, 或 **❌ 否决** 的客观建议。
+系统将自动触发该 Skill，导师 Agent 会读取知识库并严厉地拆解您的计划，指出其中的“接飞刀”、“不止损”、“向下摊薄”等自杀式行为，并最终给出 **💰 批准**, **🟡 警告**, 或 **❌ 否决** 的客观建议。

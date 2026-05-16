@@ -20,14 +20,20 @@ license: MIT
 
 当用户向你提出一个开仓或平仓的交易计划时，请严格按照以下步骤执行：
 
-### Step 1: 读取知识库 (Knowledge Retrieval)
-在做出任何评价之前，你**必须**首先阅读核心交易原则文件：
-* `references/wisdom_of_trading_rules.md` (宏观战略：大势、资金管理、止损、心理)
-* `references/japanese_candlestick_techniques.md` (微观战术：蜡烛图反转信号、买卖临界点)
-* `references/practical_a_share_trading.md` (A股实战：20日均线生命线、量价配合、右侧交易)
-* `references/livermore_wisdom.md` (作手大局观：最小阻力线、盈利加仓、耐心等待)
-* `references/ruler_rule_trend_channel.md` (趋势通道：直尺法则、上涨看支撑、下跌看压力)
-* `references/chip_distribution_analysis.md` (筹码博弈：主力吸筹/出货识别、四大筹码形态)
+### Step 1: 智能检索知识库 (Selective Knowledge Retrieval)
+* **知识库调度表 (Knowledge Retrieval Matrix)**：
+为了保证效率，你**不需要**每次都读取所有文件，但必须严格按照下表的**触发条件**按需读取对应的知识库：
+
+| 参考文件 (Reference) | 触发条件 (When to Read) | 核心知识点 (Core Concepts) |
+| :--- | :--- | :--- |
+| `wisdom_of_trading_rules.md` | **必定读取 (Mandatory)** | 风控铁律、资金管理、顺势而为、绝对止损 |
+| `japanese_candlestick_techniques.md` | 询问 K线形态、反转信号、买卖精确微观时机 | 乌云盖顶、黄昏星、十字星、单双多K线反转 |
+| `stock_trading_practice_tw.md` | 询问 均线突破、成交量、颈线、缺口理论 | 葛南维八大法则、量价配合、M头/W底、缺口 |
+| `chip_distribution_analysis.md` | 询问 主力动向、筹码分布、吸筹/派发 | 筹码单峰密集、主力洗盘与出货判定 |
+| `practical_a_share_trading.md` | 询问 A股特有战法、生命线、强势股回调 | 20日均线生命线、缩量回踩买点、量价关系 |
+| `yang_millionaire_tactics.md` | 询问 宏观大势、牛熊大周期、顶部底部逃命抄底 | 顶部疯狂信号、底部绝望特征、大周期轮回 |
+| `livermore_wisdom.md` | 询问 整体策略、加仓减仓逻辑、长线持股耐心 | 金字塔加仓、截断亏损让利润奔跑、坐等盈利 |
+| `ruler_rule_trend_channel.md` | 询问 趋势线、通道、支撑与阻力位攻防 | 直尺法则、上升/下降通道、假突破判定 |
 
 ### Step 2: 获取个股基础数据 (Data Retrieval - Optional)
 如果用户提供了具体的A股股票代码（如 `600519`），你可以选择运行工具脚本来获取当前的客观技术指标（这能帮助你验证用户所说的“趋势”是否属实）：
@@ -58,7 +64,7 @@ python scripts/analyze_trend.py <股票代码>
 
 ### Step 4: 给出最终结论与建议 (Final Verdict)
 在完成逐项审查后，给出一个清晰的最终结论：
-* **🟢 批准 (Approved)**：计划逻辑清晰，风控到位，纪律严明。祝你好运。
+* **💰 批准 (Approved)**：计划逻辑清晰，风控到位，纪律严明。祝你好运。
 * **🟡 警告 (Warning)**：计划大体合理，但在某些细节（如未设立明确移动止损、仓位偏大）存在隐患。建议修改后再执行。
 * **❌ 否决 (Rejected)**：计划极度情绪化，或完全没有止损，或试图向下摊薄成本。强烈建议取消该笔交易！
 
