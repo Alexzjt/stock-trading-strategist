@@ -26,20 +26,20 @@ license: MIT
 
 | 参考文件 (Reference) | 触发条件 (When to Read) | 核心知识点 (Core Concepts) |
 | :--- | :--- | :--- |
-| `wisdom/01_core_principles.md` | **必定读取 (Mandatory)** · 每次对话必须首先加载 | 止损铁律、资金管理、顺势而为、华尔街家训、成功者共性 |
-| `wisdom/02_technical_rules.md` | 用户询问买卖时机、临界点、支撑阻力、量价关系、止损点位置、大市顶部信号 | 正常运动判定、三种入场法、分层建仓、移动止损、选股漏斗 |
-| `wisdom/03_psychology.md` | 用户出现情绪化信号：不肯止损、要赚回来、跌了很多很便宜、大家都说好、睡不着、补仓解套 | 人性六弱点、恐惧/贪婪/希望三障碍、心理审查触发规则 |
-| `wisdom/04_masters_and_bubbles.md` | 询问大师经验，或用户追逐热门概念股/AI/新能源等疯狂题材 | 利物莫7语录、巴鲁克10条、索罗斯反馈理论、泡沫全过程与操作策略 |
-| `japanese_candlestick_techniques.md` | 询问 K线形态、反转信号、买卖精确微观时机 | 乌云盖顶、黄昏星、十字星、单双多K线反转 |
-| `stock_trading_practice_tw.md` | 询问 均线突破、成交量、颈线、缺口理论 | 葛南维八大法则、量价配合、M头/W底、缺口 |
-| `chip_distribution_analysis.md` | 询问 主力动向、筹码分布、吸筹/派发 | 筹码单峰密集、主力洗盘与出货判定 |
-| `practical_a_share_trading.md` | 询问 A股特有战法、生命线、强势股回调 | 20日均线生命线、缩量回踩买点、量价关系 |
-| `yang_millionaire_tactics.md` | 询问 宏观大势、牛熊大周期、顶部底部逃命抄底 | 顶部疯狂信号、底部绝望特征、大周期轮回 |
-| `livermore_wisdom.md` | 询问 整体策略、加仓减仓逻辑、长线持股耐心 | 金字塔加仓、截断亏损让利润奔跑、坐等盈利 |
-| `ruler_rule_trend_channel.md` | 询问 趋势线、通道、支撑与阻力位攻防 | 直尺法则、上升/下降通道、假突破判定 |
-| `turtle_position_sizing.md` | 用户询问**仓位计算**、ATR止损、每笔几手、加仓间距、账户亏损后如何调整规模 | N值（ATR）定义、头寸单位公式、2N止损、1/2N加仓间距、四层风险上限、波动性标准化 |
-| `turtle_complete_rules.md` | 用户提出**系统化交易**需求，或询问完整入市/退出/止损规则、突破系统、如何纪律性执行 | 20/55日突破入市、10/20日突破退出、买强卖弱、急变市场处理、账户缩减规则、海龟四大成功要素 |
-| `classic_trend_analysis.md` | 询问 经典反转/整理形态（头肩、双头、三角形）、突破有效性（真假突破）、测算目标价位 | 3%与3日时间过滤器、向上必须放量定律、支撑阻力互换、目标位垂直投影法、迈吉基准点法 |
+| `references/wisdom/01_core_principles.md` | **必定读取 (Mandatory)** · 每次对话必须首先加载 | 止损铁律、资金管理、顺势而为、华尔街家训、成功者共性 |
+| `references/wisdom/02_technical_rules.md` | 用户询问买卖时机、临界点、支撑阻力、量价关系、止损点位置、大市顶部信号 | 正常运动判定、三种入场法、分层建仓、移动止损、选股漏斗 |
+| `references/wisdom/03_psychology.md` | 用户出现情绪化信号：不肯止损、要赚回来、跌了很多很便宜、大家都说好、睡不着、补仓解套 | 人性六弱点、恐惧/贪婪/希望三障碍、心理审查触发规则 |
+| `references/wisdom/04_masters_and_bubbles.md` | 询问大师经验，或用户追逐热门概念股/AI/新能源等疯狂题材 | 利物莫7语录、巴鲁克10条、索罗斯反馈理论、泡沫全过程与操作策略 |
+| `references/japanese_candlestick_techniques.md` | 询问 K线形态、反转信号、买卖精确微观时机 | 乌云盖顶、黄昏星、十字星、单双多K线反转 |
+| `references/stock_trading_practice_tw.md` | 询问 均线突破、成交量、颈线、缺口理论 | 葛南维八大法则、量价配合、M头/W底、缺口 |
+| `references/chip_distribution_analysis.md` | 询问 主力动向、筹码分布、吸筹/派发 | 筹码单峰密集、主力洗盘与出货判定 |
+| `references/practical_a_share_trading.md` | 询问 A股特有战法、生命线、强势股回调 | 20日均线生命线、缩量回踩买点、量价关系 |
+| `references/yang_millionaire_tactics.md` | 询问 宏观大势、牛熊大周期、顶部底部逃命抄底 | 顶部疯狂信号、底部绝望特征、大周期轮回 |
+| `references/livermore_wisdom.md` | 询问 整体策略、加仓减仓逻辑、长线持股耐心 | 金字塔加仓、截断亏损让利润奔跑、坐等盈利 |
+| `references/ruler_rule_trend_channel.md` | 询问 趋势线、通道、支撑与阻力位攻防 | 直尺法则、上升/下降通道、假突破判定 |
+| `references/turtle_position_sizing.md` | 用户询问**仓位计算**、ATR止损、每笔几手、加仓间距、账户亏损后如何调整规模 | N值（ATR）定义、头寸单位公式、2N止损、1/2N加仓间距、四层风险上限、波动性标准化 |
+| `references/turtle_complete_rules.md` | 用户提出**系统化交易**需求，或询问完整入市/退出/止损规则、突破系统、如何纪律性执行 | 20/55日突破入市、10/20日突破退出、买强卖弱、急变市场处理、账户缩减规则、海龟四大成功要素 |
+| `references/classic_trend_analysis.md` | 询问 经典反转/整理形态（头肩、双头、三角形）、突破有效性（真假突破）、测算目标价位 | 3%与3日时间过滤器、向上必须放量定律、支撑阻力互换、目标位垂直投影法、迈吉基准点法 |
 
 ### Step 2: 获取个股基础数据 (Data Retrieval - Optional)
 如果用户提供了具体的A股股票代码（如 `600519`），你必须优先运行工具脚本来获取当前的客观技术指标和基本面风控数据（这能帮助你验证用户所说的“趋势”是否属实，并排查暴雷风险）：
@@ -82,6 +82,6 @@ python3 scripts/analyze_fundamentals.py <股票代码>
 *“我想开仓买入 600036（招商银行），目前价格是 33块，我觉得它跌得差不多了，准备全仓买入，等反弹到38块卖出。”*
 
 **你的预期行为（内心OS）：**
-1. 读取 `wisdom_of_trading_rules.md`。
+1. 读取 `references/wisdom_of_trading_rules.md`。
 2. 发现错误：①“跌得差不多了”说明可能在左侧接飞刀，违背顺势而为；②“全仓买入”违背资金管理原则；③没有提“止损点”，违背生存第一原则。
 3. 结论必然是 **❌ 否决**，并逐条教育用户。
