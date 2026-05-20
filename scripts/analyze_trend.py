@@ -106,7 +106,8 @@ def fetch_from_baidu(symbol):
 
 def analyze_volume(df, idx):
     """
-    Analyze volume at a given index relative to recent averages.
+    Analyze volume at a given index relative to recent averages (both short-term daily spikes
+    and medium-term monthly structural trends).
     Returns a dict with volume metrics and assessment.
     """
     vol = float(df.iloc[idx]['成交量'])
@@ -131,13 +132,62 @@ def analyze_volume(df, idx):
     elif vol_ratio_5 and vol_ratio_5 <= 0.7:
         assessment = "温和缩量 (<=0.7x)"
 
+    # Medium-term monthly volume analysis (comparing past 1 month vs prior 3 and 5 months)
+    recent_20_start = max(0, idx - 19)
+    recent_20_vol = df['成交量'].iloc[recent_20_start : idx + 1]
+    avg_vol_1m = recent_20_vol.mean() if len(recent_20_vol) > 0 else vol
+
+    # Prior 3 months (60 trading days preceding the recent 1 month)
+    prior_60_start = max(0, recent_20_start - 60)
+    prior_60_vol = df['成交量'].iloc[prior_60_start : recent_20_start]
+    
+    if len(prior_60_vol) >= 20: # Require at least 20 trading days of historical baseline
+        avg_vol_prior_3m = prior_60_vol.mean()
+        vol_ratio_1m_vs_3m = round(avg_vol_1m / avg_vol_prior_3m, 2) if avg_vol_prior_3m > 0 else None
+    else:
+        avg_vol_prior_3m = None
+        vol_ratio_1m_vs_3m = None
+
+    # Prior 5 months (100 trading days preceding the recent 1 month)
+    prior_100_start = max(0, recent_20_start - 100)
+    prior_100_vol = df['成交量'].iloc[prior_100_start : recent_20_start]
+    
+    if len(prior_100_vol) >= 20:
+        avg_vol_prior_5m = prior_100_vol.mean()
+        vol_ratio_1m_vs_5m = round(avg_vol_1m / avg_vol_prior_5m, 2) if avg_vol_prior_5m > 0 else None
+    else:
+        avg_vol_prior_5m = None
+        vol_ratio_1m_vs_5m = None
+
+    # Medium-term assessment
+    volume_trend_1m = "平稳"
+    if vol_ratio_1m_vs_3m is not None:
+        if vol_ratio_1m_vs_3m >= 2.0:
+            volume_trend_1m = f"成交量极度放大 (较前3个月均量持平或增加 >=2.0x, 比例:{vol_ratio_1m_vs_3m}, 强烈的资金持续建仓或换手活跃信号)"
+        elif vol_ratio_1m_vs_3m >= 1.5:
+            volume_trend_1m = f"成交量显著放大 (较前3个月均量增加 >=1.5x, 比例:{vol_ratio_1m_vs_3m}, 提示资金流入/建仓或市场关注度大增)"
+        elif vol_ratio_1m_vs_3m >= 1.2:
+            volume_trend_1m = f"成交量温和放大 (较前3个月均量增加 >=1.2x, 比例:{vol_ratio_1m_vs_3m})"
+        elif vol_ratio_1m_vs_3m <= 0.5:
+            volume_trend_1m = f"成交量显著萎缩 (较前3个月均量萎缩 <=0.5x, 比例:{vol_ratio_1m_vs_3m}, 市场关注度低/交投冷清)"
+        elif vol_ratio_1m_vs_3m <= 0.7:
+            volume_trend_1m = f"成交量温和萎缩 (较前3个月均量缩减 <=0.7x, 比例:{vol_ratio_1m_vs_3m})"
+    else:
+        volume_trend_1m = "数据不足 (历史K线少于40天)"
+
     return {
         "volume": vol,
         "vol_ma5": round(lookback_5, 2) if lookback_5 else None,
         "vol_ma10": round(lookback_10, 2) if lookback_10 else None,
         "vol_ratio_vs_5d": vol_ratio_5,
         "vol_ratio_vs_10d": vol_ratio_10,
-        "assessment": assessment
+        "assessment": assessment,
+        "avg_vol_1m": round(avg_vol_1m, 2) if avg_vol_1m else None,
+        "avg_vol_prior_3m": round(avg_vol_prior_3m, 2) if avg_vol_prior_3m else None,
+        "avg_vol_prior_5m": round(avg_vol_prior_5m, 2) if avg_vol_prior_5m else None,
+        "vol_ratio_1m_vs_3m": vol_ratio_1m_vs_3m,
+        "vol_ratio_1m_vs_5m": vol_ratio_1m_vs_5m,
+        "volume_trend_1m": volume_trend_1m
     }
 
 
@@ -620,6 +670,8 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
         ctx_vol = analyze_volume(df, i)
         kline["volume_assessment"] = ctx_vol["assessment"]
         kline["vol_ratio_vs_5d"] = ctx_vol["vol_ratio_vs_5d"]
+        kline["vol_ratio_1m_vs_3m"] = ctx_vol["vol_ratio_1m_vs_3m"]
+        kline["volume_trend_1m"] = ctx_vol["volume_trend_1m"]
         # Patterns for context rows too
         ctx_patterns = detect_patterns_at(df, i)
         kline["patterns"] = ctx_patterns if ctx_patterns else []
