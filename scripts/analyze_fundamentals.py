@@ -160,7 +160,20 @@ def analyze_hk_fundamentals(pure_symbol, original_symbol):
             "desc": f"流动比率仅 {current_ratio:.1f}%（<100%意味着流动资产无法覆盖流动负债）。"
         })
     
-    # 6. 增长信号
+    # 6. 质量三连杀 (Triple Quality Kill) — 专杀"账面微利但全面溃烂"的港股
+    # 触发条件：毛利率归零 + 营收持续萎缩 + 经营现金流为负 → 即使账面有微利也是假象
+    # 典型案例：02477 经纬天地（毛利率0%、营收-21.5%、OCF为负、净利润+0.15亿→🟡漏判→次日暴跌83%）
+    if gross_profit_ratio >= 0 and gross_profit_ratio < 5 \
+       and revenue_yoy < -10 \
+       and operating_cf <= 0 \
+       and net_profit >= 0:
+        warnings.append({
+            "risk": "质量三连杀",
+            "level": "❌ 极高风险",
+            "desc": f"毛利率仅 {gross_profit_ratio:.1f}%（无定价权）、营收同比下滑 {revenue_yoy:.1f}%（业务萎缩）、经营现金流为负({operating_cf/1e8:.2f}亿，现金流失血)。三项致命信号叠加，即使账面净利润 {net_profit/1e8:.2f}亿为正，公司实质上已在衰退通道中，极可能为财务粉饰或一次性收益维持的表面盈利。"
+        })
+
+    # 7. 增长信号
     if revenue_yoy > 30:
         warnings.append({
             "risk": "高增长",
