@@ -349,7 +349,7 @@ def row_to_dict(row, df, idx):
     else:
         d["candle"] = "十字"
 
-    for ma in ['MA10', 'MA50', 'MA200']:
+    for ma in ['MA5', 'MA10', 'MA50', 'MA200']:
         d[ma] = round(float(row[ma]), 3) if pd.notna(row[ma]) else None
     return d
 
@@ -596,6 +596,7 @@ def fetch_data(symbol):
         raise ValueError(f"No data for {original_symbol} ({symbol}). Akshare, Tencent, and Baidu all failed.")
 
     # Calculate Moving Averages
+    df['MA5'] = df['收盘'].rolling(window=5).mean()
     df['MA10'] = df['收盘'].rolling(window=10).mean()
     df['MA50'] = df['收盘'].rolling(window=50).mean()
     df['MA200'] = df['收盘'].rolling(window=200).mean()
@@ -650,6 +651,20 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
     # Macro patterns at target date
     macro_patterns = detect_macro_patterns(df, target_idx)
 
+    # Calculate cumulative warnings (last 15 trading days)
+    warning_keywords = ["流星线", "上吊线", "看跌吞没", "乌云盖顶", "平头顶", "黄昏星", "三只乌鸦"]
+    warning_count = 0
+    lookback_window = 15
+    for i in range(max(0, target_idx - lookback_window + 1), target_idx + 1):
+        past_patterns = detect_patterns_at(df, i)
+        is_warn = False
+        for pat in past_patterns:
+            if ("十字星" in pat and "高位" in pat) or ("包孕线" in pat and "高位" in pat) or any(kw in pat for kw in warning_keywords):
+                is_warn = True
+                break
+        if is_warn:
+            warning_count += 1
+
     # Trend assessment at that date
     ma10_val = float(target_row['MA10']) if pd.notna(target_row['MA10']) else None
     ma50_val = float(target_row['MA50']) if pd.notna(target_row['MA50']) else None
@@ -659,6 +674,17 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
     short_trend = "Neutral"
     if ma10_val:
         short_trend = "Uptrend" if close > ma10_val else "Downtrend"
+
+    # Determine signal and warning state
+    signal_status = "🟡持有"
+    suggested_stop_loss = None
+    if warning_count >= 3:
+        signal_status = "🟡持有⚠️收紧止盈"
+        ma5_val = float(target_row['MA5']) if pd.notna(target_row['MA5']) else None
+        if ma5_val:
+            suggested_stop_loss = round(ma5_val, 3)
+            # Append warning message to micro_patterns list
+            micro_patterns.append(f"多次高位警告 (近15日内出现 {warning_count} 次警示形态) - 信号升级为：🟡持有⚠️收紧止盈，建议收紧止损至 MA5 ({suggested_stop_loss}元)")
 
     # Context K-lines
     context_klines = []
@@ -681,6 +707,11 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
         "symbol": symbol,
         "analysis_mode": "historical" if target_date else "realtime",
         "target_date": target_dict,
+        "signal": {
+            "status": signal_status,
+            "suggested_stop_loss": suggested_stop_loss,
+            "cumulative_warnings_15d": warning_count
+        },
         "trend": {
             "short_term": short_trend,
             "vs_MA50": "Above" if (ma50_val and close > ma50_val) else "Below" if ma50_val else "N/A",
