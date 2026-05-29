@@ -219,10 +219,10 @@ def detect_patterns_at(df, idx):
     t_range = t_high - t_low if t_high != t_low else 0.01
     y_range = y_high - y_low if y_high != y_low else 0.01
 
-    # Short-term trend context (use MA10 at that date)
-    ma10_val = float(t['MA10']) if pd.notna(t['MA10']) else t_close
-    is_uptrend = t_close > ma10_val
-    is_downtrend = t_close < ma10_val
+    # Short-term trend context (use previous day's MA10 to avoid post-event bias from today's price action)
+    y_ma10 = float(y['MA10']) if pd.notna(y['MA10']) else y_close
+    is_uptrend = y_close > y_ma10
+    is_downtrend = y_close < y_ma10
 
     # ----- Single K-line patterns -----
 
