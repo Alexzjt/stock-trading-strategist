@@ -3,6 +3,7 @@ import pandas as pd
 import argparse
 import json
 import sys
+import requests
 
 def parse_symbol(symbol):
     """Parse symbol to pure digit code for API (e.g. sh600519 -> 600519, hk02513 -> 02513)"""
@@ -282,6 +283,84 @@ def fetch_top_shareholders(pure_symbol):
     
     return []
 
+def fetch_free_float_analysis(pure_symbol):
+    """
+    分析自由流通股比例、实际流通市值及实际换手率
+    """
+    if pure_symbol.startswith('920'):
+        prefix = 'bj'
+    elif pure_symbol.startswith(('6', '9')):
+        prefix = 'sh'
+    elif pure_symbol.startswith(('8', '4')):
+        prefix = 'bj'
+    else:
+        prefix = 'sz'
+    full_symbol = prefix + pure_symbol
+    
+    analysis = {
+        "top10_holding_pct": 0.0,
+        "free_float_pct": 100.0,
+        "reported_turnover_pct": 0.0,
+        "actual_turnover_pct": 0.0,
+        "total_circulating_market_cap_亿": 0.0,
+        "actual_free_float_market_cap_亿": 0.0,
+        "source": "N/A"
+    }
+    
+    # 1. 获取十大流通股东或十大股东持股比例 (根据 A股减持新规，过滤出持股 >= 5% 的大股东认定为锁仓/死筹)
+    top10_pct = 0.0
+    source = "N/A"
+    try:
+        df_shareholders = ak.stock_gdfx_free_top_10_em(symbol=full_symbol)
+        if not df_shareholders.empty and '占总流通股本持股比例' in df_shareholders.columns:
+            # 过滤持股 >= 5.0% 的大股东
+            locked_df = df_shareholders[df_shareholders['占总流通股本持股比例'] >= 5.0]
+            top10_pct = safe_float(locked_df['占总流通股本持股比例'].sum())
+            source = "十大流通股东 (仅计持股>=5%大股东)"
+    except Exception:
+        pass
+        
+    if top10_pct == 0.0:
+        try:
+            df_shareholders = ak.stock_gdfx_top_10_em(symbol=full_symbol)
+            if not df_shareholders.empty and '占总股本持股比例' in df_shareholders.columns:
+                # 过滤持股 >= 5.0% 的大股东
+                locked_df = df_shareholders[df_shareholders['占总股本持股比例'] >= 5.0]
+                top10_pct = safe_float(locked_df['占总股本持股比例'].sum())
+                source = "十大股东 (仅计持股>=5%大股东)"
+        except Exception:
+            pass
+            
+    if top10_pct == 0.0:
+        return None
+        
+    # 2. 获取实时行情（换手率、流通市值）
+    try:
+        r = requests.get(f"http://qt.gtimg.cn/q={full_symbol}", timeout=10)
+        if r.status_code == 200:
+            data = r.text.split('\"')[1].split('~')
+            reported_turnover = safe_float(data[38])
+            circ_cap = safe_float(data[45])
+            
+            free_float_pct = max(0.1, 100.0 - top10_pct)
+            actual_free_cap = circ_cap * (free_float_pct / 100.0)
+            actual_turnover = reported_turnover / (free_float_pct / 100.0)
+            
+            analysis.update({
+                "top10_holding_pct": round(top10_pct, 2),
+                "free_float_pct": round(free_float_pct, 2),
+                "reported_turnover_pct": round(reported_turnover, 2),
+                "actual_turnover_pct": round(actual_turnover, 2),
+                "total_circulating_market_cap_亿": round(circ_cap, 2),
+                "actual_free_float_market_cap_亿": round(actual_free_cap, 2),
+                "source": source
+            })
+            return analysis
+    except Exception:
+        pass
+        
+    return None
+
 def analyze_fundamentals(symbol):
     pure_symbol = parse_symbol(symbol)
     
@@ -330,7 +409,7 @@ def analyze_fundamentals(symbol):
         "人保", "太保", "平安", "新华人寿", "大家人寿", "泰康人寿",
         "交通控股", "交控", "招商局", "太平洋人寿", "太平洋保险", "太平洋资管",
         "银河资产", "中国银河", "国资运营", "国资投资", "国资管理", "国资控股",
-        "国有资本", "城投", "建投"
+        "国有资本", "城投", "建投", "中国科学院", "中科院", "国科控股"
     ]
     
     shareholders = fetch_top_shareholders(pure_symbol)
@@ -433,6 +512,20 @@ def analyze_fundamentals(symbol):
             "desc": f"应收账款占比为 {receivable_to_revenue:.1%}。需结合行业特性判断是否合理，注意甄别坏账计提风险。"
         })
 
+    # 5. 筹码集中度/自由流通盘分析
+    free_float_data = fetch_free_float_analysis(pure_symbol)
+    if free_float_data:
+        top10_pct = free_float_data["top10_holding_pct"]
+        free_float_pct = free_float_data["free_float_pct"]
+        actual_free_cap = free_float_data["actual_free_float_market_cap_亿"]
+        
+        if free_float_pct < 15.0:
+            warnings.append({
+                "risk": "极小自由流通盘",
+                "level": "🟡 中度风险",
+                "desc": f"前十大流通股东持股高达 {top10_pct:.1f}%，导致市场实际可供交易的自由流通股比例仅为 {free_float_pct:.1f}%，实际自由流通市值仅 {actual_free_cap:.2f}亿。股价具有极高的价格弹性，极易被资金快速拉升（如涨停），但同样也容易在大盘大跌或主力离场时发生流动性枯竭式下跌。请控制仓位，并做好高波动准备。"
+            })
+
     result = {
         "symbol": pure_symbol,
         "report_date": report_date,
@@ -447,6 +540,7 @@ def analyze_fundamentals(symbol):
             "Receivables_应收账款_亿": round(accounts_receivable / 1e8, 2)
         },
         "state_owned_background": state_owned_background,
+        "free_float_analysis": free_float_data,
         "warnings": warnings,
     }
     
