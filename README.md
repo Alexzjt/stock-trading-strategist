@@ -41,8 +41,7 @@
 │       └── 04_masters_and_bubbles.md       # 大师智慧精髓与泡沫应对
 ├── scripts/             # 自动化工具脚本
 │   ├── analyze_trend.py # Python 量化雷达脚本 (获取 K 线、MA5/10/50/200 均线、形态判定、计算 15 日累计警示形态并自适应 MA5 止盈)
-│   ├── analyze_fundamentals.py # 基础财务排雷脚本 (扫描高商誉、大存大贷、坏账、新增国资国家队持股等雷区)
-│   └── batch_review.py  # 批量自选股策略诊断脚手架
+│   └── analyze_fundamentals.py # 基础财务排雷脚本 (扫描高商誉、大存大贷、坏账、新增国资国家队持股等雷区)
 └── README.md            # 项目说明文档
 ```
 
