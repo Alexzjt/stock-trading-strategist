@@ -112,34 +112,97 @@ def analyze_volume(df, idx):
     """
     vol = float(df.iloc[idx]['成交量'])
 
+    # Determine if we need to extrapolate today's volume (active trading day, 9:00 AM - 4:00 PM)
+    is_extrapolated = False
+    extrapolation_factor = 1.0
+    original_volume = vol
+
+    row_date = str(df.iloc[idx]['日期'])
+    row_date_clean = row_date.replace('-', '').replace('/', '')
+
+    now = datetime.now()
+    today_str = now.strftime("%Y%m%d")
+
+    # Extrapolate if row date is today, it's a weekday, and local time is 9:00 AM - 4:00 PM (16:00)
+    if row_date_clean == today_str and now.weekday() < 5 and (9 <= now.hour < 16):
+        current_time_minutes = now.hour * 60 + now.minute
+        
+        # A-share trading sessions: 9:30-11:30 (120 mins), 13:00-15:00 (120 mins). Total 240 mins.
+        if current_time_minutes < 570:  # Before 9:30
+            elapsed = 1
+        elif 570 <= current_time_minutes <= 690:  # 9:30 - 11:30
+            elapsed = current_time_minutes - 570
+        elif 690 < current_time_minutes < 780:  # 11:30 - 13:00
+            elapsed = 120
+        elif 780 <= current_time_minutes <= 900:  # 13:00 - 15:00
+            elapsed = 120 + (current_time_minutes - 780)
+        else:  # 15:00 - 16:00
+            elapsed = 240
+            
+        elapsed = min(240, max(1, elapsed))
+
+        # A-share intra-day cumulative volume percentage mapping:
+        # Accounts for the fact that opening (9:30-10:00) and closing (14:30-15:00) see higher trading activity
+        # 30 mins (10:00) -> 30% of daily volume
+        # 60 mins (10:30) -> 45% of daily volume
+        # 120 mins (11:30) -> 65% of daily volume
+        # 180 mins (14:00) -> 80% of daily volume
+        # 210 mins (14:30) -> 90% of daily volume
+        # 240 mins (15:00) -> 100% of daily volume
+        if elapsed <= 30:
+            cumulative_pct = (elapsed / 30.0) * 0.30
+        elif elapsed <= 60:
+            cumulative_pct = 0.30 + ((elapsed - 30) / 30.0) * 0.15
+        elif elapsed <= 120:
+            cumulative_pct = 0.45 + ((elapsed - 60) / 60.0) * 0.20
+        elif elapsed <= 180:
+            cumulative_pct = 0.65 + ((elapsed - 120) / 60.0) * 0.15
+        elif elapsed <= 210:
+            cumulative_pct = 0.80 + ((elapsed - 180) / 30.0) * 0.10
+        else:
+            cumulative_pct = 0.90 + ((elapsed - 210) / 30.0) * 0.10
+
+        cumulative_pct = min(1.0, max(0.01, cumulative_pct))
+        extrapolation_factor = 1.0 / cumulative_pct
+        vol = float(vol * extrapolation_factor)
+        is_extrapolated = True
+
+    # Use a copy of volumes with today's extrapolated volume for all comparisons
+    volumes = df['成交量'].astype(float).copy()
+    volumes.iloc[idx] = vol
+
     # 5-day and 10-day volume moving averages (calculated up to the previous day)
-    lookback_5 = df['成交量'].iloc[max(0, idx-5):idx].mean() if idx >= 1 else vol
-    lookback_10 = df['成交量'].iloc[max(0, idx-10):idx].mean() if idx >= 1 else vol
+    lookback_5 = volumes.iloc[max(0, idx-5):idx].mean() if idx >= 1 else vol
+    lookback_10 = volumes.iloc[max(0, idx-10):idx].mean() if idx >= 1 else vol
 
     vol_ratio_5 = round(vol / lookback_5, 2) if lookback_5 > 0 else None
     vol_ratio_10 = round(vol / lookback_10, 2) if lookback_10 > 0 else None
 
     # Assessment
     assessment = "正常"
+    assessment_suffix = f" (基于盘中外推因子 {extrapolation_factor:.2f}x)" if is_extrapolated else ""
+
     if vol_ratio_5 and vol_ratio_5 >= 3.0:
-        assessment = "天量/巨量 (>=3x, 警惕抛售高峰/单日反转)"
+        assessment = "天量/巨量 (>=3x, 警惕抛售高峰/单日反转)" + assessment_suffix
     elif vol_ratio_5 and vol_ratio_5 >= 2.0:
-        assessment = "显著放量 (>=2x, 符合突破验证)"
+        assessment = "显著放量 (>=2x, 符合突破验证)" + assessment_suffix
     elif vol_ratio_5 and vol_ratio_5 >= 1.5:
-        assessment = "温和放量 (1.5x)"
+        assessment = "温和放量 (1.5x)" + assessment_suffix
     elif vol_ratio_5 and vol_ratio_5 <= 0.5:
-        assessment = "显著缩量 (<=0.5x)"
+        assessment = "显著缩量 (<=0.5x)" + assessment_suffix
     elif vol_ratio_5 and vol_ratio_5 <= 0.7:
-        assessment = "温和缩量 (<=0.7x)"
+        assessment = "温和缩量 (<=0.7x)" + assessment_suffix
+    elif is_extrapolated:
+        assessment = "正常" + assessment_suffix
 
     # Medium-term monthly volume analysis (comparing past 1 month vs prior 3 and 5 months)
     recent_20_start = max(0, idx - 19)
-    recent_20_vol = df['成交量'].iloc[recent_20_start : idx + 1]
+    recent_20_vol = volumes.iloc[recent_20_start : idx + 1]
     avg_vol_1m = recent_20_vol.mean() if len(recent_20_vol) > 0 else vol
 
     # Prior 3 months (60 trading days preceding the recent 1 month)
     prior_60_start = max(0, recent_20_start - 60)
-    prior_60_vol = df['成交量'].iloc[prior_60_start : recent_20_start]
+    prior_60_vol = volumes.iloc[prior_60_start : recent_20_start]
     
     if len(prior_60_vol) >= 20: # Require at least 20 trading days of historical baseline
         avg_vol_prior_3m = prior_60_vol.mean()
@@ -150,7 +213,7 @@ def analyze_volume(df, idx):
 
     # Prior 5 months (100 trading days preceding the recent 1 month)
     prior_100_start = max(0, recent_20_start - 100)
-    prior_100_vol = df['成交量'].iloc[prior_100_start : recent_20_start]
+    prior_100_vol = volumes.iloc[prior_100_start : recent_20_start]
     
     if len(prior_100_vol) >= 20:
         avg_vol_prior_5m = prior_100_vol.mean()
@@ -177,6 +240,9 @@ def analyze_volume(df, idx):
 
     return {
         "volume": vol,
+        "is_extrapolated": is_extrapolated,
+        "extrapolation_factor": round(extrapolation_factor, 2) if is_extrapolated else None,
+        "original_volume": original_volume if is_extrapolated else None,
         "vol_ma5": round(lookback_5, 2) if lookback_5 else None,
         "vol_ma10": round(lookback_10, 2) if lookback_10 else None,
         "vol_ratio_vs_5d": vol_ratio_5,
