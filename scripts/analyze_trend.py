@@ -290,6 +290,17 @@ def detect_patterns_at(df, idx):
     is_uptrend = y_close > y_ma10
     is_downtrend = y_close < y_ma10
 
+    # Define high-position context based on 20-day range and gain (prevents 2-3 day pullbacks from resetting the high-position flag)
+    highest_20d = float(df.iloc[max(0, idx-20):idx]['最高'].max()) if idx > 0 else t_high
+    lowest_20d = float(df.iloc[max(0, idx-20):idx]['最低'].min()) if idx > 0 else t_low
+    range_20d = highest_20d - lowest_20d
+    is_high_position = False
+    if range_20d > 0:
+        is_high_position = (t_close - lowest_20d) / lowest_20d > 0.10 and (t_close - lowest_20d) / range_20d > 0.4
+    else:
+        t_ma10 = float(t['MA10']) if pd.notna(t['MA10']) else t_close
+        is_high_position = (t_high - t_ma10) / t_ma10 > 0.05 if t_ma10 > 0 else False
+
     # ----- Single K-line patterns -----
 
     lower_shadow = min(t_open, t_close) - t_low
@@ -299,17 +310,19 @@ def detect_patterns_at(df, idx):
     if t_body > 0 and lower_shadow > 2 * t_body and upper_shadow < 0.3 * t_body:
         if is_downtrend:
             patterns.append("锤子线 (Hammer) - 下跌趋势中探底回升，看涨反转信号")
-        elif is_uptrend:
+        elif is_high_position:
             patterns.append("上吊线 (Hanging Man) - 高位出现长下影，诱多看跌信号")
 
-    # Shooting Star (流星线)
-    if t_body > 0 and upper_shadow > 2 * t_body and lower_shadow < 0.3 * t_body:
-        if is_uptrend:
-            patterns.append("流星线 (Shooting Star) - 冲高回落，看跌反转信号")
+    # Shooting Star (流星线) or Long Upper Shadow (长上影线)
+    if t_body > 0 and upper_shadow > 2 * t_body:
+        if lower_shadow < 0.3 * t_body and is_high_position:
+            patterns.append("流星线 (Shooting Star) - 高位冲高回落，看跌反转信号")
+        elif is_high_position and upper_shadow >= 0.02 * t_close:
+            patterns.append("高位长上影线 (Long Upper Shadow) - 冲高回落，主力出货警告")
 
     # Doji (十字星)
     if t_body <= t_range * 0.1:
-        if is_uptrend:
+        if is_high_position:
             patterns.append("十字星 (Doji) - 高位出现，警惕上涨疲态")
         elif is_downtrend:
             patterns.append("十字星 (Doji) - 低位出现，多空力量暂时均衡")
@@ -322,12 +335,12 @@ def detect_patterns_at(df, idx):
             patterns.append("看涨吞没 (Bullish Engulfing) - 底部反转信号")
 
     # Bearish Engulfing (看跌吞没)
-    if is_uptrend and y_close > y_open and t_close < t_open:
+    if is_high_position and y_close > y_open and t_close < t_open:
         if t_open >= y_close and t_close <= y_open:
             patterns.append("看跌吞没 (Bearish Engulfing) - 顶部反转预警")
 
     # Dark Cloud Cover (乌云盖顶)
-    if is_uptrend and y_close > y_open and t_close < t_open:
+    if is_high_position and y_close > y_open and t_close < t_open:
         y_mid = (y_open + y_close) / 2
         if t_open > y_high and t_close < y_mid:
             patterns.append("乌云盖顶 (Dark Cloud Cover) - 标准顶部反转，空头砸穿阳线1/2以上")
@@ -344,13 +357,13 @@ def detect_patterns_at(df, idx):
     if y_body > 0:
         if t_body < y_body * 0.5:
             if max(t_open, t_close) <= max(y_open, y_close) and min(t_open, t_close) >= min(y_open, y_close):
-                if is_uptrend:
+                if is_high_position:
                     patterns.append("包孕线 (Harami) - 高位趋势刹车，上涨动力衰竭")
                 elif is_downtrend:
                     patterns.append("包孕线 (Harami) - 低位趋势刹车，下跌动力衰竭")
 
     # Tweezers Top / Bottom (平头形态)
-    if abs(t_high - y_high) / t_range < 0.02 and is_uptrend:
+    if abs(t_high - y_high) / t_range < 0.02 and is_high_position:
         patterns.append("平头顶 (Tweezers Top) - 连续两日高点相同，顶部阻力信号")
     if abs(t_low - y_low) / t_range < 0.02 and is_downtrend:
         patterns.append("平头底 (Tweezers Bottom) - 连续两日低点相同，底部支撑信号")
@@ -415,7 +428,7 @@ def row_to_dict(row, df, idx):
     else:
         d["candle"] = "十字"
 
-    for ma in ['MA5', 'MA10', 'MA50', 'MA200']:
+    for ma in ['MA5', 'MA10', 'MA50', 'MA200', 'EXPMA10', 'EXPMA60', 'EXPMA200']:
         d[ma] = round(float(row[ma]), 3) if pd.notna(row[ma]) else None
     return d
 
@@ -666,6 +679,9 @@ def fetch_data(symbol):
     df['MA10'] = df['收盘'].rolling(window=10).mean()
     df['MA50'] = df['收盘'].rolling(window=50).mean()
     df['MA200'] = df['收盘'].rolling(window=200).mean()
+    df['EXPMA10'] = df['收盘'].ewm(span=10, adjust=False).mean()
+    df['EXPMA60'] = df['收盘'].ewm(span=60, adjust=False).mean()
+    df['EXPMA200'] = df['收盘'].ewm(span=200, adjust=False).mean()
 
     # Ensure date column is string for matching
     df['日期'] = df['日期'].astype(str)
@@ -714,11 +730,35 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
     # K-line micro patterns at target date
     micro_patterns = detect_patterns_at(df, target_idx)
     
+    # Gap resistance detection (unfilled or filled gaps acting as resistance)
+    close_val = float(target_row['收盘'])
+    high_val = float(target_row['最高'])
+    for i in range(max(1, target_idx - 30), target_idx):
+        p_row = df.iloc[i]
+        prev_row = df.iloc[i-1]
+        p_high = float(p_row['最高'])
+        p_low = float(p_row['最低'])
+        prev_high = float(prev_row['最高'])
+        prev_low = float(prev_row['最低'])
+        
+        # Upward gap at day i
+        if p_low > prev_high:
+            entered = False
+            for j in range(i + 1, target_idx):
+                j_low = float(df.iloc[j]['最低'])
+                if j_low <= p_low:
+                    entered = True
+                    break
+            if entered:
+                gap_res_line = p_low
+                if (abs(close_val - gap_res_line) / gap_res_line < 0.015 or abs(high_val - gap_res_line) / gap_res_line < 0.015) and close_val < gap_res_line * 1.015:
+                    micro_patterns.append(f"向上触及缺口阻力位 (Gap Resistance) - 价格接近 {str(p_row['日期'])} 形成的跳空缺口上沿 {gap_res_line:.2f} 元附近，存在压力区")
+    
     # Macro patterns at target date
     macro_patterns = detect_macro_patterns(df, target_idx)
 
     # Calculate cumulative warnings (last 15 trading days)
-    warning_keywords = ["流星线", "上吊线", "看跌吞没", "乌云盖顶", "平头顶", "黄昏星", "三只乌鸦"]
+    warning_keywords = ["流星线", "上吊线", "看跌吞没", "乌云盖顶", "平头顶", "黄昏星", "三只乌鸦", "长上影线"]
     warning_count = 0
     lookback_window = 15
     for i in range(max(0, target_idx - lookback_window + 1), target_idx + 1):
@@ -732,25 +772,42 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
             warning_count += 1
 
     # Trend assessment at that date
-    ma10_val = float(target_row['MA10']) if pd.notna(target_row['MA10']) else None
-    ma50_val = float(target_row['MA50']) if pd.notna(target_row['MA50']) else None
-    ma200_val = float(target_row['MA200']) if pd.notna(target_row['MA200']) else None
+    expma10_val = float(target_row['EXPMA10']) if pd.notna(target_row['EXPMA10']) else None
+    expma60_val = float(target_row['EXPMA60']) if pd.notna(target_row['EXPMA60']) else None
+    expma200_val = float(target_row['EXPMA200']) if pd.notna(target_row['EXPMA200']) else None
     close = float(target_row['收盘'])
 
     short_trend = "Neutral"
-    if ma10_val:
-        short_trend = "Uptrend" if close > ma10_val else "Downtrend"
+    if expma10_val:
+        short_trend = "Uptrend" if close > expma10_val else "Downtrend"
+
+    # Count days above EXPMA10 in last 15 days to determine trend strength
+    lookback_len = min(15, target_idx + 1)
+    days_above = 0
+    for i in range(target_idx - lookback_len + 1, target_idx + 1):
+        if float(df.iloc[i]['收盘']) > float(df.iloc[i]['EXPMA10']):
+            days_above += 1
+    is_strong_trend = (days_above / lookback_len >= 0.8) if lookback_len >= 5 else True
 
     # Determine signal and warning state
     signal_status = "🟡持有"
-    suggested_stop_loss = None
-    if warning_count >= 3:
-        signal_status = "🟡持有⚠️收紧止盈"
-        ma5_val = float(target_row['MA5']) if pd.notna(target_row['MA5']) else None
-        if ma5_val:
-            suggested_stop_loss = round(ma5_val, 3)
-            # Append warning message to micro_patterns list
-            micro_patterns.append(f"多次高位警告 (近15日内出现 {warning_count} 次警示形态) - 信号升级为：🟡持有⚠️收紧止盈，建议收紧止损至 MA5 ({suggested_stop_loss}元)")
+    suggested_stop_loss = round(expma10_val, 3) if expma10_val else None
+    
+    # Check if there's any warning pattern today
+    warning_keywords = ["流星线", "上吊线", "看跌吞没", "乌云盖顶", "平头顶", "黄昏星", "三只乌鸦", "长上影线"]
+    has_warning_today = False
+    for pat in micro_patterns:
+        if ("十字星" in pat and "高位" in pat) or ("包孕线" in pat and "高位" in pat) or any(kw in pat for kw in warning_keywords):
+            has_warning_today = True
+            break
+            
+    if has_warning_today:
+        if is_strong_trend:
+            signal_status = "🟡持有"
+            micro_patterns.append(f"今日出现K线警示，但因属于强趋势阶段(近15日EXPMA10上方天数占比 {days_above}/{lookback_len})，警示仅作参考，防守底线维持 EXPMA10 ({suggested_stop_loss}元)")
+        else:
+            signal_status = "🟡持有⚠️K线警示待确认"
+            micro_patterns.append(f"今日出现K线警示，且属于震荡徘徊阶段(近15日上方天数较少 {days_above}/{lookback_len})。开启1天观察确认：若次日收阴线或收盘低于今日，建议收盘止盈；若次日企稳，警示解除。")
 
     # Context K-lines
     context_klines = []
@@ -780,11 +837,11 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
         },
         "trend": {
             "short_term": short_trend,
-            "vs_MA50": "Above" if (ma50_val and close > ma50_val) else "Below" if ma50_val else "N/A",
-            "vs_MA200": "Above" if (ma200_val and close > ma200_val) else "Below" if ma200_val else "N/A",
-            "MA10": round(ma10_val, 3) if ma10_val else None,
-            "MA50": round(ma50_val, 3) if ma50_val else None,
-            "MA200": round(ma200_val, 3) if ma200_val else None,
+            "vs_EXPMA60": "Above" if (expma60_val and close > expma60_val) else "Below" if expma60_val else "N/A",
+            "vs_EXPMA200": "Above" if (expma200_val and close > expma200_val) else "Below" if expma200_val else "N/A",
+            "EXPMA10": round(expma10_val, 3) if expma10_val else None,
+            "EXPMA60": round(expma60_val, 3) if expma60_val else None,
+            "EXPMA200": round(expma200_val, 3) if expma200_val else None,
         },
         "volume_analysis": vol_info,
         "volume_price_relationship": vol_price,
