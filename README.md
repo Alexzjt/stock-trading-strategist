@@ -41,26 +41,55 @@
 │       └── 04_masters_and_bubbles.md       # 大师智慧精髓与泡沫应对
 ├── scripts/             # 自动化工具脚本
 │   ├── analyze_trend.py # Python 量化雷达脚本 (获取 K 线、MA5/10/50/200 均线、形态判定、计算 15 日累计警示形态并自适应 MA5 止盈)
-│   └── analyze_fundamentals.py # 基础财务排雷脚本 (扫描高商誉、大存大贷、坏账、新增国资国家队持股等雷区)
+│   ├── analyze_fundamentals.py # 基础财务排雷脚本 (扫描高商誉、大存大贷、坏账、新增国资国家队持股等雷区)
+│   └── backtest_stock.py # [NEW] 均线与强弱自适应策略回测脚本 (自动还原历史交易记录、计算胜率与累计收益)
 └── README.md            # 项目说明文档
 ```
 
-## 🛠️ 前置要求 (Prerequisites)
+## 🚀 安装与使用 (Installation & Usage)
 
-为了让 Agent 能够自动调用 `analyze_trend.py` 获取股票的客观数据（以甄别用户所描述的“趋势”是否属实），您的本地环境需要安装以下 Python 库：
+### 1. 快速安装技能
+本技能采用通用的 Agent Skills 规范进行包管理。您可以通过 `npx skills`（基于 npm 上开源的 [skills](https://www.npmjs.com/package/skills) 命令行包管理器）一键安装此技能到您的 AI Agent 工作空间：
+
+```bash
+npx skills add Alexzjt/stock-trading-strategist
+```
+
+该命令会自动拉取本 GitHub 仓库中的 `SKILL.md` 描述文件和 `references/`、`scripts/` 目录到您 AI Agent 的技能配置目录中，使其能够立即识别和执行相关的逻辑。
+
+### 2. 本地依赖安装
+为了支持指标数据获取与图表分析，请确保您的 Python 环境安装了以下依赖：
 ```bash
 pip3 install akshare pandas
 ```
 
-## 🚀 如何使用 (How to Use)
+### 3. 日常交互使用 (自然语言审查)
+当您在与支持 Agent Skills 的 AI 终端（如 Claude Code 或 Cursor 等）对话时，您只需用自然语言描述您的交易构想，即可自动触发审查：
+> *"我打算买入中际旭创（300308），现在站上EXPMA10了。我准备满仓，止损设在跌破均线的位置。"*
 
-当您在与 Claude/Agent 交互时，只需用自然语言描述您的交易计划。例如：
+AI 导师会自动载入本 Skill 对应的知识库进行逻辑对标，运行量化脚本获取当前真实的均线位置与形态，并给出 **💰 批准**, **🟡 警告**, 或 **❌ 否决** 的建议。
 
-> *"我想买入贵州茅台（600519），目前价格大概跌了很多了，我觉得是底部了。我准备先拿 50% 仓位买入，如果再跌我就补仓，把成本降下来。止损暂且不设，毕竟是好公司，我不信它能跌没。"*
+如果需要进行批量复盘，可以触发**批量扫盘模式**，Agent 会自动加载 `references/signal_classification.md` 结合脚本数据，输出按 **❌ 卖出 -> 💰 入场 -> 🟡 持有** 排序的明确决策。
 
-系统将自动触发该 Skill，导师 Agent 会读取知识库并严厉地拆解您的计划，指出其中的“接飞刀”、“不止损”、“向下摊薄”等自杀式行为，并最终给出 **💰 批准**, **🟡 警告**, 或 **❌ 否决** 的客观建议。
+### 4. 命令行工具运行
 
-如果您需要**批量扫描或复盘股票**，可以直接触发**批量扫盘模式**，Agent 会自动加载 `references/signal_classification.md` 结合脚本数据，输出按 **❌ 卖出 -> 💰 入场 -> 🟡 持有** 排序的明确三选一决策。
+#### 趋势诊断与形态扫盘：
+```bash
+python3 scripts/analyze_trend.py <股票代码> [--date YYYY-MM-DD] [--context 5]
+```
+*   输入代码（如 `300308`、`600519`），实时输出该个股的均线趋势、K线预警形态、5日均量比等详细数据，并判定今日信号状态。
+
+#### 财务基础面审计排雷：
+```bash
+python3 scripts/analyze_fundamentals.py <股票代码>
+```
+*   自动扫描大存大贷、坏账、商誉减值雷区，并统计“国家队”（社保基金、险资、汇金等）的持仓变化。
+
+#### 策略回测评估：
+```bash
+python3 scripts/backtest_stock.py <股票代码1> [股票代码2 ...]
+```
+*   对均线顺势策略在指定历史区间（2026年3月24日至今）的实际表现进行回测，直观展示每一次买入（满仓/半仓）、止损、高乖离分批止盈的记录，并统计交易次数、胜率和累计盈亏。
 
 ## ⚠️ 免责声明 & 赞赏 (Disclaimer & Support)
 

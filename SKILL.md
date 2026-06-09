@@ -49,6 +49,10 @@ license: MIT
 python3 scripts/analyze_trend.py <股票代码>
 python3 scripts/analyze_fundamentals.py <股票代码>
 ```
+如果需要对历史波段与交易系统绩效进行回测评估，可以运行回测工具：
+```bash
+python3 scripts/backtest_stock.py <股票代码1> <股票代码2> ...
+```
 如果代码无法运行或用户没有提供代码，可跳过此步。
 
 > ⚠️ **开盘时间成交量预估规则 (Trading Hours Volume Extrapolation)**:
