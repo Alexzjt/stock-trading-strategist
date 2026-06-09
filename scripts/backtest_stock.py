@@ -7,7 +7,7 @@ import argparse
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from analyze_trend import fetch_data, detect_patterns_at, analyze_volume
 
-def run_expma_backtest(stock_code, verbose=True):
+def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbose=True):
     """
     运行基于 EXPMA 的股票趋势交易策略回测。
     包含：
@@ -21,7 +21,7 @@ def run_expma_backtest(stock_code, verbose=True):
     6. 防追高限制：日内大涨且收盘价偏离 EXPMA10 超过 10% 时拦截开仓。
     """
     try:
-        symbol, df = fetch_data(stock_code)
+        symbol, df = fetch_data(stock_code, start_date=start_date)
     except Exception as e:
         print(f"获取股票 {stock_code} 数据失败: {e}")
         return None
@@ -33,10 +33,12 @@ def run_expma_backtest(stock_code, verbose=True):
     df['EXPMA60'] = df['收盘'].ewm(span=60, adjust=False).mean()
     df['EXPMA200'] = df['收盘'].ewm(span=200, adjust=False).mean()
     
-    start_date = "2026-03-24"
     df_filtered = df[df['日期'] >= start_date]
+    if end_date:
+        df_filtered = df_filtered[df_filtered['日期'] <= end_date]
+        
     if df_filtered.empty:
-        print(f"股票 {stock_code} 在指定回测区间内没有数据。")
+        print(f"股票 {stock_code} 在指定回测区间 [{start_date} 到 {end_date or '最新'}] 内没有数据。")
         return None
         
     start_idx = df_filtered.index[0]
@@ -101,7 +103,7 @@ def run_expma_backtest(stock_code, verbose=True):
         range_20d = highest_20d - lowest_20d
         is_high_position = False
         if range_20d > 0:
-            is_high_position = (close - lowest_20d) / lowest_20d > 0.10 and (close - lowest_20d) / range_20d > 0.4
+            is_high_position = (close - lowest_20d) / lowest_20d > 0.15 and (close - lowest_20d) / range_20d > 0.70
             
         # 3. K线微观形态检测
         raw_patterns = detect_patterns_at(df, idx)
@@ -290,6 +292,8 @@ def run_expma_backtest(stock_code, verbose=True):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="运行 EXPMA 均线与强弱自适应策略回测。")
     parser.add_argument("codes", type=str, nargs="*", help="股票代码列表 (例如: 300308 300502)。若空，运行默认列表。")
+    parser.add_argument("--start", type=str, default="2026-03-24", help="回测起始日期 (格式: YYYY-MM-DD)")
+    parser.add_argument("--end", type=str, default=None, help="回测结束日期 (格式: YYYY-MM-DD)")
     args = parser.parse_args()
     
     if args.codes:
@@ -298,13 +302,13 @@ if __name__ == "__main__":
         stocks = ["002475", "000543", "603986", "688305", "688017"]
         
     print("="*60)
-    print("运行指数移动平均 EXPMA10 + 双层过滤长期策略回测")
+    print(f"运行指数移动平均 EXPMA10 + 双层过滤长期策略回测 | 区间: {args.start} 到 {args.end or '最新'}")
     print("="*60)
     
     results = {}
     for s in stocks:
         print(f"\n评估 {s}...")
-        res = run_expma_backtest(s, verbose=True)
+        res = run_expma_backtest(s, start_date=args.start, end_date=args.end, verbose=True)
         if res:
             results[s] = res
             

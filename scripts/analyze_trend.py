@@ -296,10 +296,10 @@ def detect_patterns_at(df, idx):
     range_20d = highest_20d - lowest_20d
     is_high_position = False
     if range_20d > 0:
-        is_high_position = (t_close - lowest_20d) / lowest_20d > 0.10 and (t_close - lowest_20d) / range_20d > 0.4
+        is_high_position = (t_close - lowest_20d) / lowest_20d > 0.15 and (t_close - lowest_20d) / range_20d > 0.70
     else:
         t_ma10 = float(t['MA10']) if pd.notna(t['MA10']) else t_close
-        is_high_position = (t_high - t_ma10) / t_ma10 > 0.05 if t_ma10 > 0 else False
+        is_high_position = (t_high - t_ma10) / t_ma10 > 0.10 if t_ma10 > 0 else False
 
     # ----- Single K-line patterns -----
 
@@ -315,9 +315,10 @@ def detect_patterns_at(df, idx):
 
     # Shooting Star (流星线) or Long Upper Shadow (长上影线)
     if t_body > 0 and upper_shadow > 2 * t_body:
-        if lower_shadow < 0.3 * t_body and is_high_position:
+        # Require today's close to be <= yesterday's close to exclude fake Yin true Yang (positive days)
+        if lower_shadow < 0.3 * t_body and is_high_position and t_close <= y_close:
             patterns.append("流星线 (Shooting Star) - 高位冲高回落，看跌反转信号")
-        elif is_high_position and upper_shadow >= 0.02 * t_close:
+        elif is_high_position and upper_shadow >= 0.02 * t_close and t_close <= y_close:
             patterns.append("高位长上影线 (Long Upper Shadow) - 冲高回落，主力出货警告")
 
     # Doji (十字星)
@@ -609,7 +610,7 @@ def standardize_symbol(symbol):
     return symbol_lower
 
 
-def fetch_data(symbol):
+def fetch_data(symbol, start_date=None):
     """
     Fetch stock data, parse symbol, calculate MAs. Returns (prefixed_symbol, df) or raises.
     """
@@ -617,7 +618,20 @@ def fetch_data(symbol):
     symbol = standardize_symbol(original_symbol)
 
     end_date = datetime.now().strftime("%Y%m%d")
-    start_date = (datetime.now() - timedelta(days=500)).strftime("%Y%m%d")
+    
+    if start_date:
+        # Normalize to YYYYMMDD
+        clean_date = start_date.replace('-', '').replace('/', '')
+        try:
+            dt_start = datetime.strptime(clean_date, "%Y%m%d")
+            # Subtract 350 calendar days for warm-up (covers 200+ trading days for EXPMA200)
+            fetch_start_dt = dt_start - timedelta(days=350)
+            fetch_start_str = fetch_start_dt.strftime("%Y%m%d")
+        except Exception:
+            fetch_start_str = (datetime.now() - timedelta(days=500)).strftime("%Y%m%d")
+    else:
+        # Default for daily scan: fetch 500 calendar days to compute EXPMA200 accurately
+        fetch_start_str = (datetime.now() - timedelta(days=500)).strftime("%Y%m%d")
 
     df = pd.DataFrame()
 
@@ -629,7 +643,7 @@ def fetch_data(symbol):
             try:
                 df = ak.stock_zh_a_hist(
                     symbol=pure_symbol,
-                    period="daily", start_date=start_date, end_date=end_date, adjust="qfq"
+                    period="daily", start_date=fetch_start_str, end_date=end_date, adjust="qfq"
                 )
             except Exception:
                 pass
@@ -639,7 +653,7 @@ def fetch_data(symbol):
                 try:
                     df = ak.index_zh_a_hist(
                         symbol=pure_symbol,
-                        period="daily", start_date=start_date, end_date=end_date
+                        period="daily", start_date=fetch_start_str, end_date=end_date
                     )
                 except Exception:
                     pass
@@ -647,18 +661,18 @@ def fetch_data(symbol):
             pure_symbol = symbol[2:]
             df = ak.stock_zh_a_hist(
                 symbol=pure_symbol,
-                period="daily", start_date=start_date, end_date=end_date, adjust="qfq"
+                period="daily", start_date=fetch_start_str, end_date=end_date, adjust="qfq"
             )
         elif symbol.startswith('hk'):
             df = ak.stock_hk_hist(
                 symbol=symbol.replace('hk', ''),
-                period="daily", start_date=start_date, end_date=end_date, adjust="qfq"
+                period="daily", start_date=fetch_start_str, end_date=end_date, adjust="qfq"
             )
         elif symbol.startswith('us'):
             us_sym = symbol.replace('us', '')
             df = ak.stock_us_hist(
                 symbol=us_sym, period="daily",
-                start_date=start_date, end_date=end_date, adjust="qfq"
+                start_date=fetch_start_str, end_date=end_date, adjust="qfq"
             )
     except Exception:
         pass
@@ -694,7 +708,7 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
     Full analysis at a specific date (or latest if target_date is None).
     Returns a rich JSON-serializable dict.
     """
-    symbol, df = fetch_data(symbol_str)
+    symbol, df = fetch_data(symbol_str, start_date=target_date)
 
     # Locate target index
     if target_date:
