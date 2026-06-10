@@ -7,6 +7,43 @@ import argparse
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from analyze_trend import fetch_data, detect_patterns_at, analyze_volume
 
+def is_limit_up(code, close, y_close):
+    """
+    判断当前收盘价是否达到涨停价。
+    A股涨幅限制：
+    - 科创板(68)、创业板(30)：20%
+    - 北交所(83, 87, 43, 82)：30%
+    - 主板及其他：10%
+    """
+    if y_close <= 0:
+        return False
+    
+    limit_pct = 0.10
+    if code.startswith(('30', '68')):
+        limit_pct = 0.20
+    elif code.startswith(('83', '87', '43', '82')):
+        limit_pct = 0.30
+        
+    limit_up_price = round(y_close * (1 + limit_pct), 2)
+    return close >= limit_up_price - 0.005
+
+def is_limit_down(code, close, y_close):
+    """
+    判断当前收盘价是否达到跌停价。
+    """
+    if y_close <= 0:
+        return False
+    
+    limit_pct = 0.10
+    if code.startswith(('30', '68')):
+        limit_pct = 0.20
+    elif code.startswith(('83', '87', '43', '82')):
+        limit_pct = 0.30
+        
+    limit_down_price = round(y_close * (1 - limit_pct), 2)
+    return close <= limit_down_price + 0.005
+
+
 def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbose=True):
     """
     运行基于 EXPMA 的股票趋势交易策略回测。
@@ -51,6 +88,8 @@ def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbo
     warning_pending = False  # 是否有挂起的K线形态警告待次日确认
     prev_warnings = []
     trade_log = []
+    sell_pending = False      # 是否有因为跌停而被挂起/延迟的卖出
+    pending_sell_reason = ""  # 被挂起卖出的原因
     
     for idx in range(start_idx, end_idx + 1):
         row = df.iloc[idx]
@@ -139,108 +178,154 @@ def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbo
             if close <= y_high:
                 is_pullback_unconfirmed = True
                 
+        # 底部看涨 K 线形态确认
+        bullish_keywords = ["锤子线", "看涨吞没", "启明星", "刺透形态", "平头底", "红三兵", "低位趋势刹车"]
+        has_bullish_kline = False
+        matched_bullish_patterns = []
+        for offset in [0, 1, 2]:
+            if idx - offset >= 0:
+                past_patterns = detect_patterns_at(df, idx - offset)
+                for pat in past_patterns:
+                    if any(kw in pat for kw in bullish_keywords):
+                        has_bullish_kline = True
+                        clean_pat = pat.split(" - ")[0]
+                        matched_bullish_patterns.append(f"{clean_pat}(日前{offset}天)" if offset > 0 else clean_pat)
+                        
         buy_signal = False
         buy_reason = ""
         
-        if is_long_term_ok and e1 and e2 and e3 and e4 and not is_bear_candle and not is_gap_blocked and not is_pullback_unconfirmed:
+        if is_long_term_ok and e1 and e2 and e3 and e4 and not is_bear_candle and not is_gap_blocked and not is_pullback_unconfirmed and has_bullish_kline:
             deviation = (close - expma10) / expma10 * 100 if expma10 > 0 else 0
             is_chase = change_pct > 3.0 and deviation > 10.0
             max_std_dev = 8.0
             max_cautious_dev = 12.0 if is_high_position else 15.0
             
             if not is_chase:
+                pat_str = ", ".join(matched_bullish_patterns)
                 if deviation <= max_std_dev:
                     buy_signal = True
-                    buy_reason = f"偏离{deviation:.1f}%"
+                    buy_reason = f"偏离{deviation:.1f}%, K线:{pat_str}"
                     scale = 1.0
                 elif deviation <= max_cautious_dev:
                     buy_signal = True
-                    buy_reason = f"偏离{deviation:.1f}% (半仓)"
+                    buy_reason = f"偏离{deviation:.1f}% (半仓), K线:{pat_str}"
                     scale = 0.5
                     
         # 5. 卖出/持仓更新逻辑
         if holding:
-            # 高乖离止盈：偏离 EXPMA10 超过 15% 且未进行过止盈，且当前有满仓
-            dev_pct = (close - expma10) / expma10 * 100
-            if dev_pct > 15.0 and not has_taken_profit and position_scale > 0.5:
-                profit_pct = (close - buy_price) / buy_price * 100
-                trade_log.append({
-                    "type": "PARTIAL_SELL",
-                    "date": date,
-                    "price": close,
-                    "reason": f"高乖离止盈(偏离度:{dev_pct:.1f}%)",
-                    "profit": profit_pct,
-                    "scale_sold": position_scale * 0.5
-                })
-                position_scale *= 0.5
-                has_taken_profit = True
-                if verbose:
-                    print(f"    ✨ PARTIAL TAKE PROFIT {date} @ {close:.2f} ({profit_pct:.2f}%) | 剩余仓位比例: {position_scale}")
-            
-            # 退出判定
-            sell_triggered = False
-            sell_reason = ""
-            
-            # 规则 A：收盘跌破 EXPMA10 (当天走)
-            if close < expma10:
-                sell_triggered = True
-                sell_reason = "跌破EXPMA10"
-            
-            # 规则 B：K线形态确认卖出 (震荡徘徊期有效)
-            elif warning_pending:
-                if close < y_close or close < open_p:
-                    sell_triggered = True
-                    sell_reason = f"K线警示确认(前日警示:{prev_warnings})"
-                warning_pending = False
-                
-            # 计算趋势强度：近15天收盘价运行在 EXPMA10 上方的比例
-            lookback_len = min(15, idx + 1)
-            days_above = 0
-            for i in range(idx - lookback_len + 1, idx + 1):
-                if float(df.iloc[i]['收盘']) > float(df.iloc[i]['EXPMA10']):
-                    days_above += 1
-            is_strong_trend = (days_above / lookback_len >= 0.8) if lookback_len >= 5 else True
-            
-            # 若今日无破位且出现新警示，根据趋势强度进行记录或观察
-            if not sell_triggered and s3_active:
-                if is_strong_trend:
+            if sell_pending:
+                # 如果有挂起的卖出，尝试在今天以收盘价卖出（必须不是跌停板）
+                if is_limit_down(stock_code, close, y_close):
                     if verbose:
-                        print(f"      [强趋势警告仅作参考] {date}: {s3_patterns}")
+                        print(f"    ⚠️ [LIMIT DOWN, CANNOT SELL] {date} @ {close:.2f} | 跌停封板无法卖出，继续顺延 ({pending_sell_reason})")
                 else:
-                    warning_pending = True
-                    prev_warnings = s3_patterns
-            
-            if sell_triggered:
-                profit = (close - buy_price) / buy_price * 100
-                trade_log.append({
-                    "type": "SELL",
-                    "date": date,
-                    "price": close,
-                    "reason": sell_reason,
-                    "profit": profit,
-                    "scale_sold": position_scale
-                })
-                if verbose:
-                    print(f"    🔴 SELL {date} @ {close:.2f} ({profit:.2f}%) | 理由: {sell_reason}")
-                holding = False
-                warning_pending = False
+                    profit = (close - buy_price) / buy_price * 100
+                    trade_log.append({
+                        "type": "SELL",
+                        "date": date,
+                        "price": close,
+                        "reason": f"{pending_sell_reason}(延期执行)",
+                        "profit": profit,
+                        "scale_sold": position_scale
+                    })
+                    if verbose:
+                        print(f"    🔴 SELL {date} @ {close:.2f} ({profit:.2f}%) | 理由: {pending_sell_reason}(延期执行)")
+                    holding = False
+                    sell_pending = False
+                    pending_sell_reason = ""
+                    warning_pending = False
+            else:
+                # 高乖离止盈：偏离 EXPMA10 超过 15% 且未进行过止盈，且当前有满仓
+                dev_pct = (close - expma10) / expma10 * 100
+                if dev_pct > 15.0 and not has_taken_profit and position_scale > 0.5:
+                    profit_pct = (close - buy_price) / buy_price * 100
+                    trade_log.append({
+                        "type": "PARTIAL_SELL",
+                        "date": date,
+                        "price": close,
+                        "reason": f"高乖离止盈(偏离度:{dev_pct:.1f}%)",
+                        "profit": profit_pct,
+                        "scale_sold": position_scale * 0.5
+                    })
+                    position_scale *= 0.5
+                    has_taken_profit = True
+                    if verbose:
+                        print(f"    ✨ PARTIAL TAKE PROFIT {date} @ {close:.2f} ({profit_pct:.2f}%) | 剩余仓位比例: {position_scale}")
+                
+                # 退出判定
+                sell_triggered = False
+                sell_reason = ""
+                
+                # 规则 A：收盘跌破 EXPMA10 (当天走)
+                if close < expma10:
+                    sell_triggered = True
+                    sell_reason = "跌破EXPMA10"
+                
+                # 规则 B：K线形态确认卖出 (震荡徘徊期有效)
+                elif warning_pending:
+                    if close < y_close or close < open_p:
+                        sell_triggered = True
+                        sell_reason = f"K线警示确认(前日警示:{prev_warnings})"
+                    warning_pending = False
+                    
+                # 计算趋势强度：近15天收盘价运行在 EXPMA10 上方的比例
+                lookback_len = min(15, idx + 1)
+                days_above = 0
+                for i in range(idx - lookback_len + 1, idx + 1):
+                    if float(df.iloc[i]['收盘']) > float(df.iloc[i]['EXPMA10']):
+                        days_above += 1
+                is_strong_trend = (days_above / lookback_len >= 0.8) if lookback_len >= 5 else True
+                
+                # 若今日无破位且出现新警示，根据趋势强度进行记录或观察
+                if not sell_triggered and s3_active:
+                    if is_strong_trend:
+                        if verbose:
+                            print(f"      [强趋势警告仅作参考] {date}: {s3_patterns}")
+                    else:
+                        warning_pending = True
+                        prev_warnings = s3_patterns
+                
+                if sell_triggered:
+                    if is_limit_down(stock_code, close, y_close):
+                        sell_pending = True
+                        pending_sell_reason = sell_reason
+                        if verbose:
+                            print(f"    ⚠️ [LIMIT DOWN, DEFER SELL] {date} @ {close:.2f} | 触发 {sell_reason}，但跌停封板，延期至次日")
+                    else:
+                        profit = (close - buy_price) / buy_price * 100
+                        trade_log.append({
+                            "type": "SELL",
+                            "date": date,
+                            "price": close,
+                            "reason": sell_reason,
+                            "profit": profit,
+                            "scale_sold": position_scale
+                        })
+                        if verbose:
+                            print(f"    🔴 SELL {date} @ {close:.2f} ({profit:.2f}%) | 理由: {sell_reason}")
+                        holding = False
+                        warning_pending = False
         else:
             if buy_signal:
-                buy_price = close
-                position_scale = scale
-                has_taken_profit = False
-                warning_pending = False
-                prev_warnings = []
-                holding = True
-                trade_log.append({
-                    "type": "BUY",
-                    "date": date,
-                    "price": close,
-                    "reason": buy_reason,
-                    "scale": scale
-                })
-                if verbose:
-                    print(f"    🟢 BUY {date} @ {close:.2f} ({buy_reason}) | 仓位比例: {scale}")
+                if is_limit_up(stock_code, close, y_close):
+                    if verbose:
+                        print(f"    🚫 [LIMIT UP, SKIP BUY] {date} @ {close:.2f} | 涨停封板无法建仓")
+                else:
+                    buy_price = close
+                    position_scale = scale
+                    has_taken_profit = False
+                    warning_pending = False
+                    prev_warnings = []
+                    holding = True
+                    trade_log.append({
+                        "type": "BUY",
+                        "date": date,
+                        "price": close,
+                        "reason": buy_reason,
+                        "scale": scale
+                    })
+                    if verbose:
+                        print(f"    🟢 BUY {date} @ {close:.2f} ({buy_reason}) | 仓位比例: {scale}")
                     
     # 汇总盈亏统计
     closed_trades = []
