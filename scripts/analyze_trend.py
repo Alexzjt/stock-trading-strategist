@@ -684,6 +684,8 @@ def fetch_data(symbol, start_date=None):
     # Fallback to Baidu if Tencent also failed or returned incomplete data (e.g. US stocks only returning 2 rows)
     if df.empty or len(df) < 10:
         df = fetch_from_baidu(symbol)
+        if not df.empty:
+            print(f"⚠️ 警告: 股票 {original_symbol} 启用了百度财经数据源（该源可能未进行前复权处理，可能导致回测指标异常）。")
 
     if df.empty:
         raise ValueError(f"No data for {original_symbol} ({symbol}). Akshare, Tencent, and Baidu all failed.")

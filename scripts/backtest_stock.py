@@ -6,6 +6,9 @@ import argparse
 # 确保能正确导入同一目录下的 analyze_trend 脚本
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from analyze_trend import fetch_data, detect_patterns_at, analyze_volume
+from trendline_detector import find_active_trendline
+
+
 
 def is_limit_up(code, close, y_close):
     """
@@ -44,7 +47,7 @@ def is_limit_down(code, close, y_close):
     return close <= limit_down_price + 0.005
 
 
-def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbose=True):
+def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbose=True, mode='body', log_scale=True, max_slope_pct=None):
     """
     运行基于 EXPMA 的股票趋势交易策略回测。
     包含：
@@ -57,8 +60,11 @@ def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbo
     5. 高乖离止盈：收盘价偏离 EXPMA10 超过 15% 时，对半仓进行止盈（卖出持仓的50%），锁定高位利润。
     6. 防追高限制：日内大涨且收盘价偏离 EXPMA10 超过 10% 时拦截开仓。
     """
+    # 为了保证 EXPMA 均线计算准确性（避免冷启动）以及直尺压力线检测的完整性，
+    # 我们向前多获取历史数据。而实际的回测交易只在指定的 start_date 之后执行。
+    fetch_start_date = "2024-01-01" if start_date >= "2024-01-01" else "2020-01-01"
     try:
-        symbol, df = fetch_data(stock_code, start_date=start_date)
+        symbol, df = fetch_data(stock_code, start_date=fetch_start_date)
     except Exception as e:
         print(f"获取股票 {stock_code} 数据失败: {e}")
         return None
@@ -191,24 +197,49 @@ def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbo
                         clean_pat = pat.split(" - ")[0]
                         matched_bullish_patterns.append(f"{clean_pat}(日前{offset}天)" if offset > 0 else clean_pat)
                         
+        # 直尺下降压力线过滤与突破开仓
+        slope, idx_A, val_A, line_val = find_active_trendline(df, idx, pivot_window=10, mode=mode, log_scale=log_scale, max_slope_pct=max_slope_pct)
+        is_trendline_blocked = False
+        is_trendline_break = False
+        
+        if slope is not None:
+            y_line_val = val_A + slope * (idx - 1 - idx_A)
+            # 突破定义：今日收盘突破压力线，且昨日在压力线之下
+            if close > line_val and y_close <= y_line_val:
+                is_trendline_break = True
+            elif close <= line_val:
+                is_trendline_blocked = True
+                
         buy_signal = False
         buy_reason = ""
+        scale = 1.0
         
-        if is_long_term_ok and e1 and e2 and e3 and e4 and not is_bear_candle and not is_gap_blocked and not is_pullback_unconfirmed and has_bullish_kline:
+        # 两种买入触发：
+        # 1. 突破买入：放量突破中长期压力线
+        trendline_buy_trigger = is_long_term_ok and e1 and e2 and e3 and e4 and not is_bear_candle and not is_gap_blocked and not is_pullback_unconfirmed and is_trendline_break
+        
+        # 2. 均线K线常规买入：要求无压力线拦截且有看涨K线
+        std_buy_trigger = is_long_term_ok and e1 and e2 and e3 and e4 and not is_bear_candle and not is_gap_blocked and not is_pullback_unconfirmed and has_bullish_kline and not is_trendline_blocked
+        
+        if trendline_buy_trigger or std_buy_trigger:
             deviation = (close - expma10) / expma10 * 100 if expma10 > 0 else 0
             is_chase = change_pct > 3.0 and deviation > 10.0
             max_std_dev = 8.0
             max_cautious_dev = 12.0 if is_high_position else 15.0
             
             if not is_chase:
-                pat_str = ", ".join(matched_bullish_patterns)
+                if trendline_buy_trigger:
+                    pat_str = f"突破下降压力线(顶点A:{df.loc[idx_A]['日期']})"
+                else:
+                    pat_str = f"K线:{', '.join(matched_bullish_patterns)}"
+                    
                 if deviation <= max_std_dev:
                     buy_signal = True
-                    buy_reason = f"偏离{deviation:.1f}%, K线:{pat_str}"
+                    buy_reason = f"偏离{deviation:.1f}%, {pat_str}"
                     scale = 1.0
                 elif deviation <= max_cautious_dev:
                     buy_signal = True
-                    buy_reason = f"偏离{deviation:.1f}% (半仓), K线:{pat_str}"
+                    buy_reason = f"偏离{deviation:.1f}% (半仓), {pat_str}"
                     scale = 0.5
                     
         # 5. 卖出/持仓更新逻辑
@@ -376,24 +407,26 @@ def run_expma_backtest(stock_code, start_date="2026-03-24", end_date=None, verbo
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="运行 EXPMA 均线与强弱自适应策略回测。")
-    parser.add_argument("codes", type=str, nargs="*", help="股票代码列表 (例如: 300308 300502)。若空，运行默认列表。")
+    parser.add_argument("codes", type=str, nargs="+", help="要回测的股票代码列表 (例如: 000938 688018)")
     parser.add_argument("--start", type=str, default="2026-03-24", help="回测起始日期 (格式: YYYY-MM-DD)")
     parser.add_argument("--end", type=str, default=None, help="回测结束日期 (格式: YYYY-MM-DD)")
+    parser.add_argument("--mode", type=str, default="body", choices=["high_low", "close", "body"], help="趋势线画线模式 ('high_low', 'close', 'body')")
+    parser.add_argument("--linear-scale", action="store_true", help="使用普通线性坐标系，而非默认的对数坐标系")
+    parser.add_argument("--max-slope", type=float, default=None, help="最大倾斜度限制（日均下跌百分比或绝对值，例如 -0.8。若倾斜度过陡，则忽略该线）")
     args = parser.parse_args()
     
-    if args.codes:
-        stocks = args.codes
-    else:
-        stocks = ["002475", "000543", "603986", "688305", "688017"]
+    log_scale = not args.linear_scale
+    
+    stocks = args.codes
         
     print("="*60)
-    print(f"运行指数移动平均 EXPMA10 + 双层过滤长期策略回测 | 区间: {args.start} 到 {args.end or '最新'}")
+    print(f"运行指数移动平均 EXPMA10 + 双层过滤长期策略回测 | 画线模式: {args.mode} | 坐标系: {'对数' if log_scale else '线性'} | 限制倾斜度: {args.max_slope or '无'} | 区间: {args.start} 到 {args.end or '最新'}")
     print("="*60)
     
     results = {}
     for s in stocks:
         print(f"\n评估 {s}...")
-        res = run_expma_backtest(s, start_date=args.start, end_date=args.end, verbose=True)
+        res = run_expma_backtest(s, start_date=args.start, end_date=args.end, verbose=True, mode=args.mode, log_scale=log_scale, max_slope_pct=args.max_slope)
         if res:
             results[s] = res
             
