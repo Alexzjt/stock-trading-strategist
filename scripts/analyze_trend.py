@@ -842,6 +842,56 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
         kline["patterns"] = ctx_patterns if ctx_patterns else []
         context_klines.append(kline)
 
+    # Trendline analysis integration
+    trendline_results = {}
+    try:
+        from trendline_detector import find_active_trendline, find_active_support_line
+        
+        # 1. 下降阻力线 (下降压力线)
+        for mode_name in ['high_low', 'close', 'body']:
+            slope, idx_A, val_A, line_val = find_active_trendline(df, target_idx, pivot_window=10, mode=mode_name, log_scale=True)
+            if slope is not None:
+                dist_pct = round((line_val - close) / close * 100, 2)
+                trendline_results[mode_name] = {
+                    "start_date": df.iloc[idx_A]['日期'],
+                    "start_val": float(val_A),
+                    "slope": float(slope),
+                    "resistance_val": float(round(line_val, 3)),
+                    "distance_pct": dist_pct
+                }
+                
+                # Generate natural language warnings for macro patterns
+                mode_desc = {
+                    "high_low": "主要下降阻力线 (最高影线连线)",
+                    "close": "短线收盘阻力线 (收盘价连线)",
+                    "body": "短线实体阻力线 (阳线上沿连线)"
+                }[mode_name]
+                
+                if abs(dist_pct) <= 2.0:
+                    macro_patterns.append(f"股价正逼近{mode_desc}阻力位 {round(line_val, 2)}元附近 (相距 {dist_pct}%)")
+                elif dist_pct < 0:
+                    macro_patterns.append(f"股价已向上突破{mode_desc}阻力位 {round(line_val, 2)}元 (突破幅度 {round(-dist_pct, 2)}%)")
+                    
+        # 2. 上升支撑线 (上涨支撑线)
+        slope_s, idx_As, val_As, line_vals = find_active_support_line(df, target_idx, pivot_window=10, log_scale=True)
+        if slope_s is not None:
+            dist_pct_s = round((line_vals - close) / close * 100, 2)
+            trendline_results["support"] = {
+                "start_date": df.iloc[idx_As]['日期'],
+                "start_val": float(val_As),
+                "slope": float(slope_s),
+                "support_val": float(round(line_vals, 3)),
+                "distance_pct": dist_pct_s
+            }
+            
+            if abs(dist_pct_s) <= 2.0:
+                macro_patterns.append(f"股价正逼近主要上升支撑线支撑位 {round(line_vals, 2)}元附近 (相距 {dist_pct_s}%)")
+            elif dist_pct_s > 0: # 跌破支撑 (支撑值大于收盘价)
+                macro_patterns.append(f"股价已跌破主要上升支撑线支撑位 {round(line_vals, 2)}元 (跌破幅度 {round(dist_pct_s, 2)}%)")
+                
+    except Exception as e:
+        trendline_results = {"error": str(e)}
+
     result = {
         "symbol": symbol,
         "analysis_mode": "historical" if target_date else "realtime",
@@ -859,6 +909,7 @@ def analyze_at_date(symbol_str, target_date=None, context_days=5):
             "EXPMA60": round(expma60_val, 3) if expma60_val else None,
             "EXPMA200": round(expma200_val, 3) if expma200_val else None,
         },
+        "trendline_analysis": trendline_results,
         "volume_analysis": vol_info,
         "volume_price_relationship": vol_price,
         "candlestick_patterns": micro_patterns,
